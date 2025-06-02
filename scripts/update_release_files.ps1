@@ -12,14 +12,14 @@ if (-not (Test-Path $toolsDir)) {
 }
 
 # Get the .exe file
-if (-not (Test-Path "./choco-repo/dist")) {
-    Write-Error "choco-repo/dist directory not found. Make sure to download the .exe files first."
+if (-not (Test-Path "./dist")) {
+    Write-Error "dist directory not found. Make sure to download the .exe files first."
     exit 1
 }
 
-$exeFiles = Get-ChildItem ./choco-repo/dist -Filter *.exe
+$exeFiles = Get-ChildItem ./dist -Filter *.exe
 if ($exeFiles.Count -eq 0) {
-    Write-Error "No .exe files found in ./choco-repo/dist directory"
+    Write-Error "No .exe files found in ./dist directory"
     exit 1
 }
 
