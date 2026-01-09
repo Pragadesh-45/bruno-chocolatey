@@ -40,63 +40,30 @@ jobs:
           throw "❌ Invalid version format. Expected format: x.y.z (e.g., 2.7.0)"
         }
 
-        $url = "https://github.com/usebruno/bruno/releases/download/v$version/bruno_${version}_x64_win.exe"
+        mkdir -p choco-repo/dist
 
-        # Get checksum from remote file without downloading
-        $tempFile = [System.IO.Path]::GetTempFileName()
-        Invoke-WebRequest -Uri $url -OutFile $tempFile
-        $checksum = (Get-FileHash $tempFile -Algorithm SHA256).Hash
-        Remove-Item $tempFile
+        $x64Url = "https://github.com/usebruno/bruno/releases/download/v$version/bruno_${version}_x64_win.exe"
+        $arm64Url = "https://github.com/usebruno/bruno/releases/download/v$version/bruno_${version}_arm64_win.exe"
 
-        # Set environment variables
+        Write-Host "Downloading x64 installer..."
+        Invoke-WebRequest -Uri $x64Url -OutFile "choco-repo/dist/bruno_${version}_x64_win.exe"
+
+        Write-Host "Downloading arm64 installer..."
+        try {
+          Invoke-WebRequest -Uri $arm64Url -OutFile "choco-repo/dist/bruno_${version}_arm64_win.exe"
+          $hasArm64 = $true
+        } catch {
+          Write-Warning "ARM64 installer not found for this version."
+          $hasArm64 = $false
+        }
+
         echo "BRUNO_VERSION=$version" >> $env:GITHUB_ENV
-        echo "BRUNO_URL=$url" >> $env:GITHUB_ENV
-        echo "BRUNO_CHECKSUM=$checksum" >> $env:GITHUB_ENV
-
-        Write-Host "Version: $version"
-        Write-Host "URL: $url"
-        Write-Host "Checksum: $checksum"
+        echo "HAS_ARM64=$hasArm64" >> $env:GITHUB_ENV
 
     - name: Update Package Files
       shell: pwsh
       run: |
-        $version = $env:BRUNO_VERSION
-        $url = $env:BRUNO_URL
-        $checksum = $env:BRUNO_CHECKSUM
-
-        # Validate file paths
-        if (!(Test-Path "bruno.nuspec")) { throw "❌ bruno.nuspec not found." }
-        if (!(Test-Path "tools/chocolateyinstall.ps1")) { throw "❌ tools/chocolateyinstall.ps1 not found." }
-
-        # Update bruno.nuspec
-        $nuspecContent = Get-Content "bruno.nuspec" -Raw
-        $nuspecContent = $nuspecContent -replace '<version>[0-9]+\.[0-9]+\.[0-9]+</version>', "<version>$version</version>"
-        $nuspecContent = $nuspecContent -replace 'releases/tag/v[0-9]+\.[0-9]+\.[0-9]+', "releases/tag/v$version"
-        Set-Content "bruno.nuspec" $nuspecContent
-
-        # Update chocolateyinstall.ps1
-        $installContent = Get-Content "tools/chocolateyinstall.ps1" -Raw
-        $installContent = $installContent -replace 'download/v[0-9]+\.[0-9]+\.[0-9]+/bruno_[0-9]+\.[0-9]+\.[0-9]+_x64_win\.exe', "download/v$version/bruno_${version}_x64_win.exe"
-        $installContent = $installContent -replace "checksum\s*=\s*'[a-fA-F0-9]{64}'", "checksum     = '$checksum'"
-        Set-Content "tools/chocolateyinstall.ps1" $installContent
-
-        # Validate updates
-        Write-Host "🔍 Validating file updates..."
-
-        $nuspecCheck = Get-Content "bruno.nuspec" -Raw
-        $installCheck = Get-Content "tools/chocolateyinstall.ps1" -Raw
-
-        if ($nuspecCheck -match "<version>$version</version>") {
-          Write-Host "✅ bruno.nuspec version updated"
-        } else {
-          throw "❌ bruno.nuspec version not updated correctly"
-        }
-
-        if ($installCheck -match $checksum) {
-          Write-Host "✅ chocolateyinstall.ps1 checksum updated"
-        } else {
-          throw "❌ chocolateyinstall.ps1 checksum not updated correctly"
-        }
+        pwsh ./scripts/update_release_files.ps1 -Version "${{ env.BRUNO_VERSION }}" -TargetRepo "usebruno/bruno"
 
 
     - name: Install Chocolatey
@@ -165,16 +132,15 @@ jobs:
 
           ### 📦 Package Details
           - **Version:** ${{ env.BRUNO_VERSION }}
-          - **Download URL:** ${{ env.BRUNO_URL }}
-          - **SHA256 Checksum:** `${{ env.BRUNO_CHECKSUM }}`
+          - **ARM64 Support:** ${{ env.HAS_ARM64 }}
 
           ### 📝 Files Changed
           - `bruno.nuspec` - Updated version number and release tag
-          - `tools/chocolateyinstall.ps1` - Updated download URL and checksum
+          - `tools/chocolateyinstall.ps1` - Updated download URLs and checksums for x64 (and arm64 if available)
 
           ### 🔍 Verification
           - ✅ Release exists and is downloadable
-          - ✅ Checksum verified against remote file
+          - ✅ Checksums verified against remote files
           - ✅ All package files updated successfully
 
           ### 🎯 Next Steps

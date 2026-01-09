@@ -23,27 +23,51 @@ if ($exeFiles.Count -eq 0) {
     exit 1
 }
 
-$exePath = $exeFiles | Select-Object -First 1
-$checksum = Get-FileHash $exePath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
+$x64Exe = $exeFiles | Where-Object { $_.Name -like "*x64*" } | Select-Object -First 1
+$arm64Exe = $exeFiles | Where-Object { $_.Name -like "*arm64*" } | Select-Object -First 1
+
+if (-not $x64Exe) {
+    Write-Error "x64 installer not found"
+    exit 1
+}
+
+$x64Checksum = Get-FileHash $x64Exe.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash
+
+$arm64Logic = ""
+if ($arm64Exe) {
+    $arm64Checksum = Get-FileHash $arm64Exe.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash
+    $arm64Logic = @"
+  `$url = 'https://github.com/$TargetRepo/releases/download/v$Version/$($arm64Exe.Name)'
+  `$checksum = '$arm64Checksum'
+"@
+}
 
 # Create chocolateyinstall.ps1
-@"
+$installScript = @"
 `$ErrorActionPreference = 'Stop'
 `$toolsDir = "`$(Split-Path -Parent `$MyInvocation.MyCommand.Definition)"
-`$url = 'https://github.com/$TargetRepo/releases/download/v$Version/$(Split-Path $exePath.Name -Leaf)'
+`$url = 'https://github.com/$TargetRepo/releases/download/v$Version/$($x64Exe.Name)'
+`$checksum = '$x64Checksum'
+
+`$osArchitecture = Get-ProcessorArchitecture
+if (`$osArchitecture -eq 'arm64') {
+  $arm64Logic
+}
 
 `$packageArgs = @{
     packageName    = '`$env:ChocolateyPackageName'
     fileType      = 'exe'
     url           = `$url
     softwareName  = 'Bruno*'
-    checksum      = '$checksum'
+    checksum      = `$checksum
     checksumType  = 'sha256'
     silentArgs    = '/S'
 }
 
 Install-ChocolateyPackage @packageArgs
-"@ | Out-File -FilePath "$toolsDir/chocolateyinstall.ps1" -Encoding UTF8
+"@
+
+$installScript | Out-File -FilePath "$toolsDir/chocolateyinstall.ps1" -Encoding UTF8
 
 # Create nuspec file
 @"
